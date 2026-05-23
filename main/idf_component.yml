@@ -1,0 +1,23 @@
+## idf_component.yml
+## Place in main/ alongside main.c
+## Run `idf.py reconfigure` to download all components.
+ 
+dependencies:
+  idf: ">=5.1.0"
+ 
+  ## CO5300 QSPI display driver
+  kodediy/esp_lcd_co5300: ">=1.0.2"
+ 
+  ## LVGL port — moved to components/esp_lvgl_port (patched for CST9217)
+  ## Disabled here to prevent managed_components from overwriting the patch.
+  # espressif/esp_lvgl_port: ">=2.4.0"
+ 
+  ## CST9217 capacitive touch driver — official Waveshare component
+  ## Pulls in espressif/esp_lcd_touch automatically as a dependency
+  waveshare/esp_lcd_touch_cst9217: ">=1.0.4"
+ 
+  ## Pin LVGL to v9.x
+  lvgl/lvgl:
+    version: "^9"
+    public: true
+ 
