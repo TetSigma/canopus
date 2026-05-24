@@ -54,8 +54,11 @@ extern "C"
     /** Force all screens to refresh time on next tick (call after TZ change) */
     void clock_service_force_tick_refresh(void);
 
-    /** Returns true once after a TZ change — resets to false after being read */
+    /** Returns true if TZ has changed since last check (does NOT reset flag) */
     bool clock_service_tz_changed(void);
+
+    /** Apply pending TZ change — call from any screen tick that shows time */
+    void clock_service_apply_tz(void);
 
 #ifdef __cplusplus
 }

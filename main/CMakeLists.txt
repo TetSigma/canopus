@@ -7,11 +7,16 @@ idf_component_register(
     SRCS
         "main.c"
         "app_manager.c"
+        "power_manager.c"
 
         # ── Services ───────────────────────────────────────────────
         "services/wifi_service.c"
         "services/service_template.c"
         "services/clock_service.c"
+        "services/imu_service.c"
+        "dashboard/imu_dashboard.c"
+
+
         # "services/service_yourname.c"
 
         # ── Screens ────────────────────────────────────────────────
@@ -37,11 +42,13 @@ idf_component_register(
         "screens"
         "services"   # wifi_service.h, etc.
         "../components/esp_lvgl_port/include"
+        "dashboard"
         "ui"
 
         
     REQUIRES
         esp_wifi
+        esp_http_server
         esp_event
         esp_netif
         nvs_flash

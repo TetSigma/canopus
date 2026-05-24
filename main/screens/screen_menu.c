@@ -296,14 +296,6 @@ static void menu_tick(void)
 {
     if (!s_time_label)
         return;
-
-    /* Reset cache when timezone changes so display updates immediately */
-    if (clock_service_tz_changed())
-    {
-        tzset();
-        s_last_min = -1;
-    }
-
     time_t now = clock_service_now();
     struct tm t;
     localtime_r(&now, &t);
@@ -316,10 +308,22 @@ static void menu_tick(void)
     lv_label_set_text(s_time_label, buf);
 }
 
+static void menu_on_enter(void)
+{
+    const char *tz = getenv("TZ");
+    if (tz)
+    {
+        setenv("TZ", tz, 1);
+        tzset();
+    }
+    s_last_min = -1;
+}
+
 static void menu_on_exit(void)
 {
-    s_time_label = NULL;
     s_last_min = -1;
+    /* Don't null s_time_label — the tile object persists and the label is still valid.
+     * Only free the canvas buffer since it's heap-allocated separately. */
     if (s_canvas_buf)
     {
         heap_caps_free(s_canvas_buf);
@@ -330,7 +334,7 @@ static void menu_on_exit(void)
 const screen_t screen_menu = {
     .name = "menu",
     .create = menu_create,
-    .on_enter = NULL,
+    .on_enter = menu_on_enter,
     .on_exit = menu_on_exit,
     .tick = menu_tick,
 };

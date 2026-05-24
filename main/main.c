@@ -23,6 +23,10 @@
 #include "esp_log.h"
 #include "app_manager.h"
 #include "clock_service.h"
+#include "power_manager.h"
+#include "imu_service.h"
+#include "imu_dashboard.h"
+#include "imu_service.h"
 
 /* ── Screen externs ──────────────────────────────────────────────── */
 extern const screen_t screen_watchface;
@@ -115,6 +119,9 @@ static void init_i2c(void)
     ESP_LOGI(TAG, "I2C ready");
 }
 
+static lv_indev_t *s_indev = NULL;
+static esp_lcd_panel_handle_t s_panel = NULL;
+
 static lv_disp_t *init_display(void)
 {
     const spi_bus_config_t buscfg =
@@ -147,6 +154,7 @@ static lv_disp_t *init_display(void)
     ESP_ERROR_CHECK(esp_lcd_panel_set_gap(panel, 6, 0));
     vTaskDelay(pdMS_TO_TICKS(50));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel, true));
+    s_panel = panel; /* save for power manager */
     ESP_LOGI(TAG, "Display on (%dx%d)", LCD_WIDTH, LCD_HEIGHT);
 
     const lvgl_port_cfg_t lvgl_cfg = {
@@ -180,8 +188,13 @@ static lv_disp_t *init_display(void)
     return disp;
 }
 
-static lv_indev_t *s_indev = NULL;
 lv_indev_t *get_touch_indev(void) { return s_indev; }
+
+static void touch_event_cb(lv_event_t *e)
+{
+    (void)e;
+    power_manager_touch();
+}
 
 static void init_touch(lv_disp_t *disp)
 {
@@ -224,12 +237,16 @@ static void init_touch(lv_disp_t *disp)
     }
     s_indev = indev;
     ESP_LOGI(TAG, "Touch registered via lvgl_port");
+
+    /* Notify power manager on every touch so it resets inactivity timer */
+    lv_indev_add_event_cb(indev, touch_event_cb, LV_EVENT_PRESSED, NULL);
 }
 
 static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     ESP_LOGI(TAG, "Got IP — syncing clock");
     clock_service_sync();
+    imu_dashboard_start();
 }
 
 static void wifi_init_task(void *arg)
@@ -301,6 +318,15 @@ void app_main(void)
 
     clock_service_init();
     xTaskCreate(wifi_init_task, "wifi_init", 8192, NULL, 2, NULL);
+
+    /* 10. IMU service — double-tap to wake */
+    imu_service_init(s_i2c_bus, power_manager_wake);
+
+    /* 11. Power manager — dim/sleep after inactivity */
+    power_manager_init(s_i2c_bus, TP_INT, s_panel);
+
+    /* 11. IMU service — wake on motion (wrist raise / tap) */
+    imu_service_init(s_i2c_bus, power_manager_wake);
 
     ESP_LOGI(TAG, "Boot complete");
 }

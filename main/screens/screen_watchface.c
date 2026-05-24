@@ -57,10 +57,6 @@ static void watchface_tick(void)
     if (!s_time_label || !s_date_label)
         return;
 
-    /* Re-apply TZ if changed from settings — forces localtime_r to use new zone */
-    if (clock_service_tz_changed())
-        tzset();
-
     time_t now = clock_service_now();
     struct tm t;
     localtime_r(&now, &t);
@@ -84,17 +80,26 @@ static void watchface_tick(void)
     }
 }
 
+static void watchface_on_enter(void)
+{
+    const char *tz = getenv("TZ");
+    if (tz)
+    {
+        setenv("TZ", tz, 1);
+        tzset();
+    }
+}
+
 static void watchface_on_exit(void)
 {
-    s_time_label = NULL;
-    s_date_label = NULL;
-    s_sync_dot = NULL;
+    /* Labels belong to the tile lv_obj which persists — don't null them.
+     * Only null if the screen is actually being destroyed (overlay). */
 }
 
 const screen_t screen_watchface = {
     .name = "watchface",
     .create = watchface_create,
-    .on_enter = NULL,
+    .on_enter = watchface_on_enter,
     .on_exit = watchface_on_exit,
     .tick = watchface_tick,
 };

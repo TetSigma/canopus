@@ -191,13 +191,25 @@ static volatile int s_tz_changed = 0;
 
 void clock_service_force_tick_refresh(void)
 {
-    s_tz_changed = 10; /* stays true for ~10 ticks = 1s, all screens see it */
+    s_tz_changed = 1;
 }
 
 bool clock_service_tz_changed(void)
 {
-    if (s_tz_changed <= 0)
-        return false;
-    s_tz_changed--;
-    return true;
+    return s_tz_changed != 0;
+}
+
+void clock_service_apply_tz(void)
+{
+    if (!s_tz_changed)
+        return;
+    s_tz_changed = 0;
+    /* Re-apply on calling task — newlib tzset() is per-process but
+     * calling it again on the LVGL task ensures localtime_r picks it up */
+    const char *tz = getenv("TZ");
+    if (tz)
+    {
+        setenv("TZ", tz, 1);
+        tzset();
+    }
 }

@@ -5,6 +5,7 @@
 #include "screen.h"
 #include "app_manager.h"
 #include "settings_registry.h"
+#include "clock_service.h"
 #include "ui_kit.h"
 #include "ui_theme.h"
 #include "esp_log.h"
@@ -18,6 +19,7 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include <time.h>
 
 static const char *TAG = "scr_settings";
@@ -112,8 +114,18 @@ static void tz_selected_cb(lv_event_t *e)
     if (!ctx || ctx->idx < 0 || ctx->idx >= TZ_COUNT)
         return;
 
+    /* Apply immediately — don't defer to tick */
     setenv("TZ", TZ_LIST[ctx->idx].tz, 1);
     tzset();
+
+    /* Verify it took effect */
+    time_t now = time(NULL);
+    struct tm t;
+    localtime_r(&now, &t);
+    ESP_LOGI(TAG, "TZ set to '%s' → local time now %02d:%02d",
+             TZ_LIST[ctx->idx].tz, t.tm_hour, t.tm_min);
+
+    /* Save to NVS */
     nvs_handle_t h;
     if (nvs_open(NVS_NS_CLOCK, NVS_READWRITE, &h) == ESP_OK)
     {
@@ -121,12 +133,13 @@ static void tz_selected_cb(lv_event_t *e)
         nvs_commit(h);
         nvs_close(h);
     }
-    ESP_LOGI(TAG, "timezone → %s", TZ_LIST[ctx->idx].name);
+    ESP_LOGI(TAG, "timezone → %s (%s)", TZ_LIST[ctx->idx].name, TZ_LIST[ctx->idx].tz);
+
+    /* Signal screens with s_last_min cache to reset */
+    clock_service_force_tick_refresh();
+
     if (ctx->overlay)
         lv_obj_delete(ctx->overlay);
-    /* Force all screens to refresh their time display on next tick */
-    extern void clock_service_force_tick_refresh(void);
-    clock_service_force_tick_refresh();
 }
 
 static void show_tz_picker(lv_obj_t *parent)
