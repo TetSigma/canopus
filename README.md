@@ -1,30 +1,9 @@
-ESP-IDF Hello World for Waveshare 1.75" Round AMOLED (placeholder)
+Canopus (named after a star that is named after some ancient greek guy) is my personal research project in ESP-IDF environment  
 
-Overview
-- Minimal ESP-IDF project that initializes SPI and calls placeholder GC9A01 routines.
+The goal is to create custom ESP32-S3 FREERTOS based smartwatch that will be interconnected with my other projects  
 
-Files added
-- `main/main.c` - app entry initializing SPI and calling display routines.
-- `main/display_gc9a01.h` / `.c` - minimal adapter with placeholder functions.
 
-Before you build
-- Install ESP-IDF and set up the environment per Espressif docs.
+Its my first embedded project, and my first big C project, so the code might be bad. But feel free to add notes or recomendations if you are better at this than i am  
 
-Configure pins
-- Edit `main.c` to match your board's SPI pins (MOSI, SCLK, CS, DC, RST, BL).
 
-Build and flash (PowerShell)
-```powershell
-cd c:\Users\TetSigma\sample_project
-.
-# set ESP-IDF env (example)
-.
-# Build
-idf.py build
-
-# Flash to COM3 (adjust target/port per your setup)
-idf.py -p COM3 flash
-```
-
-Notes
-- The display driver initialization and pixel drawing in `display_gc9a01.c` are placeholders. If you want, I can fetch Waveshare's exact init sequence for the GC9A01 controller and implement pixel streaming and text rendering.
+I will be posting PRD and progress later on during development
