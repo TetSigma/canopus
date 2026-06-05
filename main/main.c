@@ -5,6 +5,7 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
@@ -68,6 +69,7 @@ static const char *TAG = "main";
 #define AXP2101_ALDO4_EN (1 << 3)
 
 i2c_master_bus_handle_t s_i2c_bus = NULL; /* extern'd by screen_settings */
+SemaphoreHandle_t g_i2c_mutex = NULL;     /* extern'd by anyone doing I2C */
 static i2c_master_dev_handle_t s_axp_dev = NULL;
 
 static void axp_write(uint8_t reg, uint8_t val)
@@ -109,6 +111,8 @@ static void init_i2c(void)
         .flags.enable_internal_pullup = true,
     };
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &s_i2c_bus));
+    g_i2c_mutex = xSemaphoreCreateMutex();
+    configASSERT(g_i2c_mutex);
 
     const i2c_device_config_t axp_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,

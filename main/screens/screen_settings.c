@@ -17,6 +17,7 @@
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
@@ -46,21 +47,33 @@ static void dismiss_cb(lv_event_t *e)
 /* ═══════════════════════════════════════════════════════════════════
  * Battery
  * ═══════════════════════════════════════════════════════════════════ */
+extern SemaphoreHandle_t g_i2c_mutex;
+
 static int read_battery_percent(void)
 {
+    if (!g_i2c_mutex)
+        return -1;
+    if (xSemaphoreTake(g_i2c_mutex, pdMS_TO_TICKS(500)) != pdTRUE)
+        return -1;
+
     i2c_master_dev_handle_t dev = NULL;
     const i2c_device_config_t cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = AXP2101_ADDR,
         .scl_speed_hz = 400000,
     };
-    if (i2c_master_bus_add_device(s_i2c_bus, &cfg, &dev) != ESP_OK)
-        return -1;
-    uint8_t reg = AXP2101_BAT_PERCENT, val = 0;
-    i2c_master_transmit(dev, &reg, 1, pdMS_TO_TICKS(50));
-    i2c_master_receive(dev, &val, 1, pdMS_TO_TICKS(50));
-    i2c_master_bus_rm_device(dev);
-    return (int)(val & 0x7F);
+    int result = -1;
+    if (i2c_master_bus_add_device(s_i2c_bus, &cfg, &dev) == ESP_OK)
+    {
+        uint8_t reg = AXP2101_BAT_PERCENT, val = 0;
+        i2c_master_transmit(dev, &reg, 1, pdMS_TO_TICKS(50));
+        i2c_master_receive(dev, &val, 1, pdMS_TO_TICKS(50));
+        i2c_master_bus_rm_device(dev);
+        result = (int)(val & 0x7F);
+    }
+
+    xSemaphoreGive(g_i2c_mutex);
+    return result;
 }
 
 static void bat_task(void *arg)
@@ -322,7 +335,7 @@ static void settings_create(lv_obj_t *parent)
     /* Battery row — special because value updates live */
     lv_obj_t *bat_row = uk_row_titled(list, LV_SYMBOL_BATTERY_FULL, "Battery");
     s_bat_label = uk_row_set_value(bat_row, "...", UK_COL_MUTED);
-    xTaskCreate(bat_task, "bat_read", 2048, NULL, 1, NULL);
+    xTaskCreate(bat_task, "bat_read", 4096, NULL, 1, NULL);
 
     /* Built-in system rows */
     render_group(list, NULL, s_system_rows,

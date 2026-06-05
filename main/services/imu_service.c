@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <string.h>
 #include <math.h>
 
@@ -72,6 +73,7 @@ static volatile bool s_ready = false;
 static imu_motion_cb_t s_motion_cb = NULL;
 static i2c_master_bus_handle_t s_bus = NULL;
 static i2c_master_dev_handle_t s_dev = NULL;
+static SemaphoreHandle_t s_i2c_mutex = NULL;
 
 /* ── I2C ─────────────────────────────────────────────────────────── */
 static bool try_open(uint8_t addr)
@@ -92,22 +94,33 @@ static bool try_open(uint8_t addr)
 static uint8_t reg_read(uint8_t reg)
 {
     uint8_t val = 0;
-    i2c_master_transmit(s_dev, &reg, 1, pdMS_TO_TICKS(20));
-    i2c_master_receive(s_dev, &val, 1, pdMS_TO_TICKS(20));
+    if (xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(50)) == pdTRUE)
+    {
+        i2c_master_transmit(s_dev, &reg, 1, pdMS_TO_TICKS(20));
+        i2c_master_receive(s_dev, &val, 1, pdMS_TO_TICKS(20));
+        xSemaphoreGive(s_i2c_mutex);
+    }
     return val;
 }
 
 static void reg_write(uint8_t reg, uint8_t val)
 {
     uint8_t buf[2] = {reg, val};
-    i2c_master_transmit(s_dev, buf, 2, pdMS_TO_TICKS(20));
+    if (xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(50)) == pdTRUE)
+    {
+        i2c_master_transmit(s_dev, buf, 2, pdMS_TO_TICKS(20));
+        xSemaphoreGive(s_i2c_mutex);
+    }
 }
 
-/* Burst read: send register address, receive len bytes */
 static void reg_burst(uint8_t start, uint8_t *out, int len)
 {
-    i2c_master_transmit(s_dev, &start, 1, pdMS_TO_TICKS(20));
-    i2c_master_receive(s_dev, out, len, pdMS_TO_TICKS(20));
+    if (xSemaphoreTake(s_i2c_mutex, pdMS_TO_TICKS(50)) == pdTRUE)
+    {
+        i2c_master_transmit(s_dev, &start, 1, pdMS_TO_TICKS(20));
+        i2c_master_receive(s_dev, out, len, pdMS_TO_TICKS(20));
+        xSemaphoreGive(s_i2c_mutex);
+    }
 }
 
 static inline int16_t to_s16(uint8_t lo, uint8_t hi)
@@ -152,18 +165,15 @@ static void imu_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(50));
 
     s_ready = true;
-    ESP_LOGI(TAG, "streaming at 2Hz  accel=±8g  gyro=±512°/s");
-    ESP_LOGI(TAG, "%-28s  %-26s  rotation", "Accelerometer (g)", "Gyroscope (°/s)");
+    ESP_LOGI(TAG, "QMI8658 ready — accel=±8g gyro=±512°/s");
 
     float ax_prev = 0, ay_prev = 0, az_prev = 0;
     uint32_t last_motion_ms = 0;
-    uint8_t print_div = 0;
 
     for (;;)
     {
         vTaskDelay(pdMS_TO_TICKS(10)); /* 100Hz */
 
-        /* Read 12 bytes: accel (6) + gyro (6) starting at REG_AX_L */
         uint8_t buf[12];
         reg_burst(REG_AX_L, buf, 12);
 
@@ -189,24 +199,6 @@ static void imu_task(void *arg)
         ax_prev = ax;
         ay_prev = ay;
         az_prev = az;
-
-        /* Print at 2Hz (every 50th sample) with visual bar */
-        if (++print_div >= 50)
-        {
-            print_div = 0;
-
-            /* Simple movement bar based on gyro magnitude */
-            float gmag = sqrtf(gx * gx + gy * gy + gz * gz);
-            int bars = (int)(gmag / 50.0f);
-            if (bars > 10)
-                bars = 10;
-            char bar[12] = "          ";
-            for (int i = 0; i < bars; i++)
-                bar[i] = '|';
-
-            ESP_LOGI(TAG, "A: %+5.2fg %+5.2fg %+5.2fg  G: %+6.1f %+6.1f %+6.1f  rot:[%s]",
-                     ax, ay, az, gx, gy, gz, bar);
-        }
     }
 }
 
@@ -216,7 +208,9 @@ esp_err_t imu_service_init(i2c_master_bus_handle_t i2c_bus,
 {
     s_bus = i2c_bus;
     s_motion_cb = motion_cb;
-    xTaskCreate(imu_task, "imu_task", 4096, NULL, 2, NULL);
+    s_i2c_mutex = xSemaphoreCreateMutex();
+    configASSERT(s_i2c_mutex);
+    xTaskCreate(imu_task, "imu_task", 8192, NULL, 2, NULL);
     return ESP_OK;
 }
 

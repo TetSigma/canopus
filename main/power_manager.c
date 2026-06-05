@@ -129,12 +129,10 @@ static void enter_light_sleep(void)
 {
     ESP_LOGI(TAG, "→ LIGHT SLEEP");
     s_state = PM_STATE_LIGHT_SLEEP;
+    esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
 
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-
-    /* Wake every 500ms to check for touch via polling.
-     * GPIO wakeup is unreliable if touch IC INT isn't wired to driver. */
-    esp_sleep_enable_timer_wakeup(500 * 1000ULL); /* 500ms */
+    /* Wake every 100ms to poll touch — fast enough to catch a single tap */
+    esp_sleep_enable_timer_wakeup(100 * 1000ULL); /* 100ms */
 
     while (s_state == PM_STATE_LIGHT_SLEEP)
     {
@@ -143,7 +141,7 @@ static void enter_light_sleep(void)
         /* Check how long we've been idle total */
         uint32_t idle_ms = (xTaskGetTickCount() - s_last_touch_tick) * portTICK_PERIOD_MS;
 
-        /* Read touch INT pin — low = touch detected (active low) */
+        /* Read touch INT pin — low = touched (active low) */
         bool touched = (gpio_get_level(s_tp_int_pin) == 0);
 
         if (touched || idle_ms < (uint32_t)(PM_SLEEP_TIMEOUT_S * 1000))
@@ -161,7 +159,7 @@ static void enter_light_sleep(void)
         }
 
         /* No touch, not yet deep sleep timeout — sleep again */
-        esp_sleep_enable_timer_wakeup(500 * 1000ULL);
+        esp_sleep_enable_timer_wakeup(100 * 1000ULL);
     }
 
     ESP_LOGI(TAG, "wake from light sleep");
@@ -199,7 +197,6 @@ static void do_wake(void)
     ESP_LOGI(TAG, "wake");
     s_last_touch_tick = xTaskGetTickCount(); /* reset before display on */
     s_state = PM_STATE_AWAKE;
-    esp_wifi_set_ps(WIFI_PS_NONE);
     display_power(true);
     vTaskDelay(pdMS_TO_TICKS(50));
     lvgl_resume();
@@ -224,7 +221,7 @@ static void pm_task(void *arg)
         }
         else if (s_state == PM_STATE_DIM)
         {
-            /* Poll touch INT pin — active low means finger on screen */
+            /* Poll touch INT pin during DIM */
             if (gpio_get_level(s_tp_int_pin) == 0)
             {
                 ESP_LOGI(TAG, "touch during DIM — waking");
@@ -263,7 +260,7 @@ esp_err_t power_manager_init(i2c_master_bus_handle_t i2c_bus,
     };
     gpio_config(&io);
 
-    xTaskCreate(pm_task, "pm_task", 4096, NULL, 1, NULL);
+    xTaskCreate(pm_task, "pm_task", 6144, NULL, 1, NULL);
     ESP_LOGI(TAG, "init ok — dim=%ds sleep=%ds deep=%ds",
              PM_DIM_TIMEOUT_S, PM_SLEEP_TIMEOUT_S, PM_DEEP_SLEEP_TIMEOUT_S);
     return ESP_OK;
